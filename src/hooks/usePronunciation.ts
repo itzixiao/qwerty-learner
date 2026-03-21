@@ -129,22 +129,23 @@ function useSpeechSynthesisSound(word: string, pronunciation: Exclude<Pronunciat
 /**
  * 使用有道 API 的发音 Hook（用于单词）
  */
-function useYoudaoSound(word: string, pronunciation: Exclude<PronunciationType, false>, isLoop: boolean, volume: number, rate: number) {
+function useYoudaoSound(word: string, pronunciation: Exclude<PronunciationType, false>, loop: boolean, volume: number, rate: number) {
   const [isPlaying, setIsPlaying] = useState(false)
 
-  const [play, { stop, sound }] = useSound(generateWordSoundSrc(word, pronunciation), {
+  const soundUrl = generateWordSoundSrc(word, pronunciation)
+  const [play, { stop, sound }] = useSound(soundUrl, {
     html5: true,
     format: ['mp3'],
-    loop: isLoop,
+    loop,
     volume,
     rate,
   } as HookOptions)
 
   useEffect(() => {
     if (!sound) return
-    sound.loop(isLoop)
+    sound.loop(loop)
     return noop
-  }, [isLoop, sound])
+  }, [loop, sound])
 
   useEffect(() => {
     if (!sound) return
@@ -165,6 +166,20 @@ function useYoudaoSound(word: string, pronunciation: Exclude<PronunciationType, 
   return { play, stop, isPlaying }
 }
 
+/**
+ * 多词短语的发音 Hook（使用 Web Speech API）
+ * 单独导出，避免违反 React Hooks 规则
+ */
+export function useMultiWordPhraseSound(word: string, isLoop?: boolean) {
+  const pronunciationConfig = useAtomValue(pronunciationConfigAtom)
+  return useSpeechSynthesisSound(
+    word,
+    pronunciationConfig.type as Exclude<PronunciationType, false>,
+    pronunciationConfig.volume,
+    pronunciationConfig.rate,
+  )
+}
+
 export default function usePronunciationSound(word: string, isLoop?: boolean) {
   const pronunciationConfig = useAtomValue(pronunciationConfigAtom)
   const loop = useMemo(() => (typeof isLoop === 'boolean' ? isLoop : pronunciationConfig.isLoop), [isLoop, pronunciationConfig.isLoop])
@@ -181,9 +196,11 @@ export default function usePronunciationSound(word: string, isLoop?: boolean) {
     pronunciationConfig.rate,
   )
 
-  // 单词使用有道 API
+  // 单词使用有道 API - 传入空字符串避免实际加载
+  // 注意：这里仍然需要调用 useYoudaoSound 以遵守 React Hooks 规则
+  // 但对于多词短语，我们会使用 speechSound 的返回值
   const youdaoSound = useYoudaoSound(
-    word,
+    isPhrase ? '' : word, // 多词短语时传入空字符串，避免加载音频
     pronunciation as Exclude<PronunciationType, false>,
     loop,
     pronunciationConfig.volume,
@@ -216,9 +233,7 @@ export function usePrefetchPronunciationSound(word: string | undefined) {
       const audio = new Audio()
       audio.src = soundUrl
       audio.preload = 'auto'
-
-      // gpt 说这这两行能尽可能规避下载插件被触发问题。 本地测试不加也可以，考虑到别的插件可能有问题，所以加上保险
-      audio.crossOrigin = 'anonymous'
+      // 注意：不设置 crossOrigin，避免 CORS 问题
       audio.style.display = 'none'
 
       head.appendChild(audio)
